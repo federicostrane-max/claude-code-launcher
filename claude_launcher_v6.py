@@ -6,6 +6,7 @@ Claude Code Launcher v6
 - GUI Screenshot Helper (Ctrl+V)
 - FILE UPLOAD Helper (Browse per selezionare file)
 - --dangerously-skip-permissions sempre attivo
+- NUOVO: USA RALPH - Modalità autonoma basata su Ralph Wiggum
 """
 
 import os
@@ -25,6 +26,201 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
+
+
+# ============================================================
+#                    RALPH WIGGUM - AUTONOMOUS MODE
+# ============================================================
+
+RALPH_PROMPT_BUILD_TEMPLATE = """0a. Study `specs/*` with up to 500 parallel Sonnet subagents to learn the application specifications.
+0b. Study @IMPLEMENTATION_PLAN.md.
+0c. For reference, the application source code is in `{src_dir}`.
+
+1. Your task is to implement functionality per the specifications using parallel subagents. Follow @IMPLEMENTATION_PLAN.md and choose the most important item to address. Before making changes, search the codebase (don't assume not implemented) using Sonnet subagents. You may use up to 500 parallel Sonnet subagents for searches/reads and only 1 Sonnet subagent for build/tests. Use Opus subagents when complex reasoning is needed (debugging, architectural decisions).
+2. After implementing functionality or resolving problems, run the tests for that unit of code that was improved. If functionality is missing then it's your job to add it as per the application specifications. Ultrathink.
+3. When you discover issues, immediately update @IMPLEMENTATION_PLAN.md with your findings using a subagent. When resolved, update and remove the item.
+4. When the tests pass, update @IMPLEMENTATION_PLAN.md, then `git add -A` then `git commit` with a message describing the changes. After the commit, `git push`.
+
+99999. Important: When authoring documentation, capture the why — tests and implementation importance.
+999999. Important: Single sources of truth, no migrations/adapters. If tests unrelated to your work fail, resolve them as part of the increment.
+9999999. As soon as there are no build or test errors create a git tag. If there are no git tags start at 0.0.0 and increment patch by 1 for example 0.0.1 if 0.0.0 does not exist.
+99999999. You may add extra logging if required to debug issues.
+999999999. Keep @IMPLEMENTATION_PLAN.md current with learnings using a subagent — future work depends on this to avoid duplicating efforts. Update especially after finishing your turn.
+9999999999. When you learn something new about how to run the application, update @AGENTS.md using a subagent but keep it brief.
+99999999999. For any bugs you notice, resolve them or document them in @IMPLEMENTATION_PLAN.md using a subagent even if it is unrelated to the current piece of work.
+999999999999. Implement functionality completely. Placeholders and stubs waste efforts and time redoing the same work.
+9999999999999. When @IMPLEMENTATION_PLAN.md becomes large periodically clean out the items that are completed from the file using a subagent.
+99999999999999. If you find inconsistencies in the specs/* then use an Opus 4.5 subagent with 'ultrathink' requested to update the specs.
+999999999999999. IMPORTANT: Keep @AGENTS.md operational only — status updates and progress notes belong in `IMPLEMENTATION_PLAN.md`.
+"""
+
+RALPH_PROMPT_PLAN_TEMPLATE = """0a. Study `specs/*` with up to 250 parallel Sonnet subagents to learn the application specifications.
+0b. Study @IMPLEMENTATION_PLAN.md (if present) to understand the plan so far.
+0c. Study `{src_dir}` with up to 250 parallel Sonnet subagents to understand shared utilities & components.
+0d. For reference, the application source code is in `{src_dir}`.
+
+1. Study @IMPLEMENTATION_PLAN.md (if present; it may be incorrect) and use up to 500 Sonnet subagents to study existing source code in `{src_dir}` and compare it against `specs/*`. Use an Opus subagent to analyze findings, prioritize tasks, and create/update @IMPLEMENTATION_PLAN.md as a bullet point list sorted in priority of items yet to be implemented. Ultrathink. Consider searching for TODO, minimal implementations, placeholders, skipped/flaky tests, and inconsistent patterns. Study @IMPLEMENTATION_PLAN.md to determine starting point for research and keep it up to date with items considered complete/incomplete using subagents.
+
+IMPORTANT: Plan only. Do NOT implement anything. Do NOT assume functionality is missing; confirm with code search first. Treat `{src_dir}` as the project's standard library for shared utilities and components. Prefer consolidated, idiomatic implementations there over ad-hoc copies.
+
+ULTIMATE GOAL: {goal}. Consider missing elements and plan accordingly. If an element is missing, search first to confirm it doesn't exist, then if needed author the specification at specs/FILENAME.md. If you create a new element then document the plan to implement it in @IMPLEMENTATION_PLAN.md using a subagent.
+"""
+
+RALPH_AGENTS_TEMPLATE = """## Build & Run
+
+Project: {project_name}
+Source: {src_dir}
+
+## Validation
+
+Run these after implementing to get immediate feedback:
+
+- Tests: `{test_cmd}`
+- Build: `{build_cmd}`
+
+## Operational Notes
+
+- This is a Ralph-automated session
+- Goal: {goal}
+"""
+
+
+def create_ralph_files(project_path, goal, src_dir=".", test_cmd="npm test", build_cmd="npm run build"):
+    """Crea i file necessari per Ralph nel progetto"""
+    project_name = os.path.basename(project_path)
+
+    # Crea cartella specs se non esiste
+    specs_dir = os.path.join(project_path, "specs")
+    os.makedirs(specs_dir, exist_ok=True)
+
+    # Crea spec iniziale con il goal dell'utente
+    spec_content = f"""# User Goal Specification
+
+## Objective
+{goal}
+
+## Requirements
+- Implement the functionality as described above
+- Follow existing code patterns and conventions
+- Add appropriate tests
+- Update documentation as needed
+
+## Acceptance Criteria
+- The implementation should fully address the objective
+- All tests should pass
+- Code should be clean and maintainable
+"""
+
+    spec_path = os.path.join(specs_dir, "user-goal.md")
+    with open(spec_path, 'w', encoding='utf-8') as f:
+        f.write(spec_content)
+
+    # Crea PROMPT_plan.md
+    prompt_plan = RALPH_PROMPT_PLAN_TEMPLATE.format(
+        src_dir=src_dir,
+        goal=goal
+    )
+    with open(os.path.join(project_path, "PROMPT_plan.md"), 'w', encoding='utf-8') as f:
+        f.write(prompt_plan)
+
+    # Crea PROMPT_build.md
+    prompt_build = RALPH_PROMPT_BUILD_TEMPLATE.format(src_dir=src_dir)
+    with open(os.path.join(project_path, "PROMPT_build.md"), 'w', encoding='utf-8') as f:
+        f.write(prompt_build)
+
+    # Crea AGENTS.md
+    agents = RALPH_AGENTS_TEMPLATE.format(
+        project_name=project_name,
+        src_dir=src_dir,
+        test_cmd=test_cmd,
+        build_cmd=build_cmd,
+        goal=goal
+    )
+    with open(os.path.join(project_path, "AGENTS.md"), 'w', encoding='utf-8') as f:
+        f.write(agents)
+
+    return True
+
+
+def launch_ralph_loop(project_path, mode="plan", max_iterations=5, model="sonnet"):
+    """
+    Lancia il loop Ralph in Windows Terminal
+
+    Args:
+        project_path: percorso del progetto
+        mode: 'plan' o 'build'
+        max_iterations: numero massimo di iterazioni
+        model: 'opus' o 'sonnet'
+    """
+    if not os.path.isdir(project_path):
+        return False
+
+    drive = ""
+    if len(project_path) >= 2 and project_path[1] == ':':
+        drive = project_path[0:2]
+
+    prompt_file = f"PROMPT_{mode}.md"
+
+    # Script batch per il loop Ralph
+    batch_content = f'''@echo off
+setlocal enabledelayedexpansion
+{drive}
+cd "{project_path}"
+cls
+echo.
+echo ══════════════════════════════════════════════════════════════
+echo   RALPH WIGGUM - Autonomous Mode
+echo   Project: {os.path.basename(project_path)}
+echo   Mode: {mode.upper()}
+echo   Model: {model}
+echo   Max Iterations: {max_iterations}
+echo ══════════════════════════════════════════════════════════════
+echo.
+echo   Press Ctrl+C to stop the loop at any time
+echo.
+
+set ITERATION=0
+
+:loop
+if !ITERATION! GEQ {max_iterations} (
+    echo.
+    echo ══════════════════════════════════════════════════════════════
+    echo   Reached max iterations: {max_iterations}
+    echo   Ralph loop completed!
+    echo ══════════════════════════════════════════════════════════════
+    pause
+    exit /b 0
+)
+
+set /a ITERATION+=1
+echo.
+echo ======================== LOOP !ITERATION! / {max_iterations} ========================
+echo.
+
+type "{prompt_file}" | claude -p --dangerously-skip-permissions --model {model}
+
+if errorlevel 1 (
+    echo.
+    echo [WARNING] Claude exited with error. Continuing to next iteration...
+)
+
+echo.
+echo Loop !ITERATION! completed. Starting next iteration...
+timeout /t 2 /nobreak >nul
+
+goto loop
+'''
+
+    temp_dir = tempfile.gettempdir()
+    batch_path = os.path.join(temp_dir, "ralph_loop_temp.bat")
+
+    with open(batch_path, 'w', encoding='utf-8') as f:
+        f.write(batch_content)
+
+    # Lancia in Windows Terminal
+    subprocess.run(f'wt.exe -d "{project_path}" cmd /k "{batch_path}"', shell=True)
+
+    return True
 
 
 # ============================================================
@@ -330,22 +526,205 @@ class SessionChoiceDialog:
         
         # Bind Escape
         self.dialog.bind("<Escape>", lambda e: self.cancel())
-        
+
         # Focus
         btn_new.focus_set()
-        
+
     def choose_new(self):
         self.result = "new"
         self.dialog.destroy()
-        
+
     def choose_resume(self):
         self.result = "resume"
         self.dialog.destroy()
-        
+
     def cancel(self):
         self.result = None
         self.dialog.destroy()
-        
+
+    def get_result(self):
+        self.dialog.wait_window()
+        return self.result
+
+
+# ============================================================
+#                    DIALOGO CONFIGURAZIONE RALPH
+# ============================================================
+
+class RalphConfigDialog:
+    """Dialogo per configurare e avviare Ralph"""
+
+    def __init__(self, parent, project_path, initial_goal=""):
+        self.result = None
+        self.project_path = project_path
+
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Ralph Wiggum - Configurazione")
+        self.dialog.geometry("550x520")
+        self.dialog.resizable(False, False)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # Centra rispetto al parent
+        self.dialog.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - 550) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - 520) // 2
+        self.dialog.geometry(f"+{x}+{y}")
+
+        # Contenuto
+        frame = ttk.Frame(self.dialog, padding="15")
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # Titolo
+        title = ttk.Label(
+            frame,
+            text="🤖 Ralph Wiggum - Autonomous Mode",
+            font=("Segoe UI", 14, "bold")
+        )
+        title.pack(pady=(0, 5))
+
+        subtitle = ttk.Label(
+            frame,
+            text="Claude lavorerà in autonomia sul tuo obiettivo",
+            font=("Segoe UI", 9),
+            foreground="gray"
+        )
+        subtitle.pack(pady=(0, 15))
+
+        # Goal
+        goal_frame = ttk.LabelFrame(frame, text="🎯 Obiettivo (cosa vuoi che faccia)", padding="10")
+        goal_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.goal_text = tk.Text(goal_frame, height=4, wrap=tk.WORD, font=("Segoe UI", 10))
+        self.goal_text.pack(fill=tk.X)
+        if initial_goal:
+            self.goal_text.insert("1.0", initial_goal)
+
+        # Configurazione
+        config_frame = ttk.LabelFrame(frame, text="⚙️ Configurazione", padding="10")
+        config_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Source directory
+        src_row = ttk.Frame(config_frame)
+        src_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(src_row, text="Directory sorgente:", width=18).pack(side=tk.LEFT)
+        self.src_var = tk.StringVar(value=".")
+        ttk.Entry(src_row, textvariable=self.src_var, width=30).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Test command
+        test_row = ttk.Frame(config_frame)
+        test_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(test_row, text="Comando test:", width=18).pack(side=tk.LEFT)
+        self.test_var = tk.StringVar(value="npm test")
+        ttk.Entry(test_row, textvariable=self.test_var, width=30).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Build command
+        build_row = ttk.Frame(config_frame)
+        build_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(build_row, text="Comando build:", width=18).pack(side=tk.LEFT)
+        self.build_var = tk.StringVar(value="npm run build")
+        ttk.Entry(build_row, textvariable=self.build_var, width=30).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Model selection
+        model_row = ttk.Frame(config_frame)
+        model_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(model_row, text="Modello:", width=18).pack(side=tk.LEFT)
+        self.model_var = tk.StringVar(value="sonnet")
+        model_combo = ttk.Combobox(model_row, textvariable=self.model_var, values=["sonnet", "opus"], state="readonly", width=15)
+        model_combo.pack(side=tk.LEFT, padx=(5, 0))
+
+        # Max iterations
+        iter_row = ttk.Frame(config_frame)
+        iter_row.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(iter_row, text="Max iterazioni:", width=18).pack(side=tk.LEFT)
+        self.iter_var = tk.IntVar(value=5)
+        iter_spin = ttk.Spinbox(iter_row, from_=1, to=50, textvariable=self.iter_var, width=10)
+        iter_spin.pack(side=tk.LEFT, padx=(5, 0))
+
+        # Mode selection
+        mode_frame = ttk.LabelFrame(frame, text="🔄 Modalità di avvio", padding="10")
+        mode_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.mode_var = tk.StringVar(value="plan")
+
+        plan_radio = ttk.Radiobutton(
+            mode_frame,
+            text="📋 PLAN - Prima crea il piano di implementazione",
+            variable=self.mode_var,
+            value="plan"
+        )
+        plan_radio.pack(anchor=tk.W)
+
+        build_radio = ttk.Radiobutton(
+            mode_frame,
+            text="🔨 BUILD - Vai diretto all'implementazione",
+            variable=self.mode_var,
+            value="build"
+        )
+        build_radio.pack(anchor=tk.W)
+
+        # Info box
+        info_frame = ttk.Frame(frame)
+        info_frame.pack(fill=tk.X, pady=(0, 10))
+
+        info_text = """⚠️ ATTENZIONE: Ralph lavorerà in autonomia!
+• Creerà/modificherà file nel progetto
+• Farà commit automatici su git
+• Premi Ctrl+C nel terminale per fermare"""
+
+        info_label = ttk.Label(
+            info_frame,
+            text=info_text,
+            font=("Segoe UI", 9),
+            foreground="#cc7700",
+            justify=tk.LEFT
+        )
+        info_label.pack(anchor=tk.W)
+
+        # Bottoni
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
+
+        btn_cancel = ttk.Button(
+            btn_frame,
+            text="Annulla",
+            command=self.cancel
+        )
+        btn_cancel.pack(side=tk.LEFT)
+
+        btn_start = ttk.Button(
+            btn_frame,
+            text="🚀 Avvia Ralph!",
+            command=self.start_ralph
+        )
+        btn_start.pack(side=tk.RIGHT)
+
+        # Bind Escape
+        self.dialog.bind("<Escape>", lambda e: self.cancel())
+
+    def start_ralph(self):
+        """Avvia Ralph con la configurazione"""
+        goal = self.goal_text.get("1.0", tk.END).strip()
+
+        if not goal:
+            messagebox.showwarning("Obiettivo mancante", "Inserisci un obiettivo per Ralph!", parent=self.dialog)
+            return
+
+        self.result = {
+            'goal': goal,
+            'src_dir': self.src_var.get(),
+            'test_cmd': self.test_var.get(),
+            'build_cmd': self.build_var.get(),
+            'model': self.model_var.get(),
+            'max_iterations': self.iter_var.get(),
+            'mode': self.mode_var.get()
+        }
+        self.dialog.destroy()
+
+    def cancel(self):
+        self.result = None
+        self.dialog.destroy()
+
     def get_result(self):
         self.dialog.wait_window()
         return self.result
@@ -584,7 +963,7 @@ class ClaudeLauncherGUI:
         # Bottoni azione
         btn_frame = ttk.Frame(frame)
         btn_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
-        
+
         self.btn_copy = ttk.Button(
             btn_frame,
             text="📋 Copia negli Appunti",
@@ -592,7 +971,16 @@ class ClaudeLauncherGUI:
             state=tk.DISABLED
         )
         self.btn_copy.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
-        
+
+        # NUOVO: Bottone USA RALPH
+        self.btn_ralph = ttk.Button(
+            btn_frame,
+            text="🤖 USA RALPH",
+            command=self.launch_ralph_mode,
+            state=tk.DISABLED
+        )
+        self.btn_ralph.pack(side=tk.LEFT, padx=(0, 5))
+
         btn_back = ttk.Button(
             btn_frame,
             text="◀ Torna ai progetti",
@@ -688,15 +1076,18 @@ class ClaudeLauncherGUI:
         
         if success:
             self.terminal_launched = True
-            
+
             # Abilita tab send
             self.notebook.tab(1, state="normal")
             self.notebook.select(1)
-            
+
             # Aggiorna label
             mode = "🆕 Nuova" if new_session else "📂 Riprendi"
             self.project_label.config(text=f"📂 {project_name} ({mode})")
             self.status_send.set("✅ Terminale avviato! Aggiungi screenshot/file e copia")
+
+            # Abilita bottone Ralph
+            self.btn_ralph.config(state=tk.NORMAL)
         else:
             messagebox.showerror("Errore", f"Impossibile avviare Claude in:\n{path}")
             
@@ -738,6 +1129,7 @@ class ClaudeLauncherGUI:
                 self.notebook.select(1)
                 mode = "🆕 Nuova" if new_session else "📂 Riprendi"
                 self.project_label.config(text=f"📂 {project_name} ({mode})")
+                self.btn_ralph.config(state=tk.NORMAL)
         elif path:
             messagebox.showerror("Errore", f"Percorso non valido:\n{path}")
             
@@ -960,12 +1352,16 @@ class ClaudeLauncherGUI:
             self.output_text.insert("1.0", output)
             self.output_text.config(state=tk.DISABLED)
             self.btn_copy.config(state=tk.NORMAL)
+            self.btn_ralph.config(state=tk.NORMAL)
         else:
             self.output_text.config(state=tk.NORMAL)
             self.output_text.delete("1.0", tk.END)
             self.output_text.config(state=tk.DISABLED)
             self.btn_copy.config(state=tk.DISABLED)
-            
+            # Ralph sempre abilitato se c'è un progetto attivo
+            if self.current_project_path:
+                self.btn_ralph.config(state=tk.NORMAL)
+
     def copy_to_clipboard(self):
         """Copia negli appunti"""
         output = self.output_text.get("1.0", tk.END).strip()
@@ -973,7 +1369,70 @@ class ClaudeLauncherGUI:
             self.root.clipboard_clear()
             self.root.clipboard_append(output)
             self.status_send.set("✅ Copiato! Usa CLICK DESTRO nel terminale per incollare")
-            
+
+    def launch_ralph_mode(self):
+        """Avvia Ralph Wiggum - modalità autonoma"""
+        if not self.current_project_path:
+            messagebox.showerror("Errore", "Nessun progetto selezionato!")
+            return
+
+        # Prendi il messaggio come goal iniziale
+        initial_goal = ""
+        msg = self.msg_text.get("1.0", tk.END).strip()
+        if msg and not self.msg_placeholder:
+            initial_goal = msg
+
+        # Mostra dialog di configurazione Ralph
+        dialog = RalphConfigDialog(self.root, self.current_project_path, initial_goal)
+        config = dialog.get_result()
+
+        if config is None:
+            return
+
+        # Crea i file Ralph
+        self.status_send.set("🔧 Creazione file Ralph...")
+        self.root.update()
+
+        try:
+            create_ralph_files(
+                self.current_project_path,
+                goal=config['goal'],
+                src_dir=config['src_dir'],
+                test_cmd=config['test_cmd'],
+                build_cmd=config['build_cmd']
+            )
+
+            # Avvia il loop Ralph
+            self.status_send.set("🚀 Avvio Ralph loop...")
+            self.root.update()
+
+            success = launch_ralph_loop(
+                self.current_project_path,
+                mode=config['mode'],
+                max_iterations=config['max_iterations'],
+                model=config['model']
+            )
+
+            if success:
+                self.status_send.set(f"✅ Ralph avviato! Mode: {config['mode'].upper()}, Iterations: {config['max_iterations']}")
+                messagebox.showinfo(
+                    "Ralph Avviato",
+                    f"Ralph è in esecuzione!\n\n"
+                    f"Modalità: {config['mode'].upper()}\n"
+                    f"Modello: {config['model']}\n"
+                    f"Max iterazioni: {config['max_iterations']}\n\n"
+                    f"Controlla il terminale per vedere il progresso.\n"
+                    f"Premi Ctrl+C nel terminale per fermare.",
+                    parent=self.root
+                )
+            else:
+                self.status_send.set("❌ Errore avvio Ralph")
+                messagebox.showerror("Errore", "Impossibile avviare Ralph loop!")
+
+        except Exception as e:
+            self.status_send.set(f"❌ Errore: {str(e)}")
+            messagebox.showerror("Errore", f"Errore durante l'avvio di Ralph:\n{str(e)}")
+
     def run(self):
         """Avvia l'applicazione"""
         if not PIL_AVAILABLE:
