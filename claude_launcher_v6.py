@@ -387,22 +387,23 @@ def format_size(size_bytes):
     else:
         return f"{size_bytes // (1024*1024)} MB"
 
-def launch_claude_terminal(project_path, session_id=None, new_session=False):
+def launch_claude_terminal(project_path, session_id=None, new_session=False, as_new_tab=False):
     """
     Lancia Claude in Windows Terminal
-    
+
     Args:
         project_path: percorso del progetto
         session_id: ID specifico della sessione (opzionale)
         new_session: se True, avvia una NUOVA sessione (senza --resume)
+        as_new_tab: se True, apre come nuovo TAB nella finestra WT esistente
     """
     if not os.path.isdir(project_path):
         return False
-    
+
     drive = ""
     if len(project_path) >= 2 and project_path[1] == ':':
         drive = project_path[0:2]
-    
+
     # Costruisci il comando Claude
     if new_session:
         # NUOVA SESSIONE - senza --resume
@@ -416,7 +417,9 @@ def launch_claude_terminal(project_path, session_id=None, new_session=False):
         # Riprendi ultima sessione (menu selezione)
         claude_cmd = "claude --dangerously-skip-permissions --resume"
         session_type = "RIPRENDI SESSIONE"
-    
+
+    project_name = os.path.basename(project_path)
+
     if sys.platform == 'win32':
         batch_content = f'''@echo off
 {drive}
@@ -424,23 +427,35 @@ cd "{project_path}"
 cls
 echo.
 echo ══════════════════════════════════════════════════════════════
-echo   Claude Code - {os.path.basename(project_path)}
+echo   Claude Code - {project_name}
 echo   Modalita: {session_type}
 echo   [Click destro per incollare]
 echo ══════════════════════════════════════════════════════════════
 echo.
 {claude_cmd}
 '''
-        
+
         temp_dir = tempfile.gettempdir()
-        batch_path = os.path.join(temp_dir, "claude_launch_temp.bat")
-        
+        # Usa nome unico per batch file per evitare conflitti con tab multipli
+        batch_filename = f"claude_launch_{project_name.replace(' ', '_')}_{id(project_path)}.bat"
+        batch_path = os.path.join(temp_dir, batch_filename)
+
         with open(batch_path, 'w', encoding='utf-8') as f:
             f.write(batch_content)
-        
-        # Usa Windows Terminal
-        subprocess.run(f'wt.exe -d "{project_path}" cmd /k "{batch_path}"', shell=True)
-    
+
+        if as_new_tab:
+            # Apri come NUOVO TAB nella finestra Windows Terminal esistente
+            # -w 0 = usa la finestra WT più recente (o creane una se non esiste)
+            # new-tab = crea un nuovo tab
+            # --title = titolo del tab
+            subprocess.run(
+                f'wt.exe -w 0 new-tab --title "{project_name}" -d "{project_path}" cmd /k "{batch_path}"',
+                shell=True
+            )
+        else:
+            # Comportamento originale: apri nuova finestra
+            subprocess.run(f'wt.exe -d "{project_path}" cmd /k "{batch_path}"', shell=True)
+
     return True
 
 
@@ -820,7 +835,7 @@ class ClaudeLauncherGUI:
         # Bottoni principali
         btn_frame = ttk.Frame(frame)
         btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
+
         self.btn_launch = ttk.Button(
             btn_frame,
             text="🚀 Avvia Claude Code",
@@ -828,14 +843,23 @@ class ClaudeLauncherGUI:
             state=tk.DISABLED
         )
         self.btn_launch.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
-        
+
+        # Bottone per aggiungere come nuovo TAB
+        self.btn_add_tab = ttk.Button(
+            btn_frame,
+            text="➕ Nuovo Tab",
+            command=self.add_as_new_tab,
+            state=tk.DISABLED
+        )
+        self.btn_add_tab.pack(side=tk.LEFT, padx=(0, 5))
+
         btn_refresh = ttk.Button(
             btn_frame,
             text="🔄 Aggiorna",
             command=self.load_projects
         )
         btn_refresh.pack(side=tk.LEFT)
-        
+
         btn_new = ttk.Button(
             btn_frame,
             text="📁 Nuovo percorso",
@@ -1036,15 +1060,59 @@ class ClaudeLauncherGUI:
         selection = self.tree.selection()
         if selection:
             self.btn_launch.config(state=tk.NORMAL)
+            # Abilita "Nuovo Tab" solo se c'è già un terminale aperto
+            if self.terminal_launched:
+                self.btn_add_tab.config(state=tk.NORMAL)
+            else:
+                self.btn_add_tab.config(state=tk.DISABLED)
             idx = self.tree.index(selection[0])
             self.selected_project = self.projects[idx]
         else:
             self.btn_launch.config(state=tk.DISABLED)
+            self.btn_add_tab.config(state=tk.DISABLED)
             self.selected_project = None
-            
+
     def on_project_double_click(self, event):
         """Doppio click = avvia"""
         self.launch_selected()
+
+    def add_as_new_tab(self):
+        """Apre il progetto selezionato come NUOVO TAB in Windows Terminal esistente"""
+        if not self.selected_project:
+            return
+
+        if not self.terminal_launched:
+            messagebox.showinfo(
+                "Info",
+                "Prima avvia un progetto con '🚀 Avvia Claude Code',\n"
+                "poi potrai aggiungere altri progetti come tab."
+            )
+            return
+
+        path = self.selected_project['real_path']
+
+        if not path or not os.path.isdir(path):
+            path = self.ask_path_dialog(self.selected_project['folder_name'])
+            if not path:
+                return
+
+        # Mostra dialogo per scegliere tipo sessione
+        project_name = os.path.basename(path)
+        dialog = SessionChoiceDialog(self.root, project_name)
+        choice = dialog.get_result()
+
+        if choice is None:
+            return
+
+        # Lancia come NUOVO TAB
+        new_session = (choice == "new")
+        success = launch_claude_terminal(path, new_session=new_session, as_new_tab=True)
+
+        if success:
+            mode = "🆕 Nuova" if new_session else "📂 Riprendi"
+            self.status_projects.set(f"✅ Tab aggiunto: {project_name} ({mode})")
+        else:
+            messagebox.showerror("Errore", f"Impossibile aggiungere tab per:\n{path}")
         
     def launch_selected(self):
         """Avvia il progetto selezionato - MOSTRA DIALOGO SCELTA"""
@@ -1088,6 +1156,9 @@ class ClaudeLauncherGUI:
 
             # Abilita bottone Ralph
             self.btn_ralph.config(state=tk.NORMAL)
+
+            # Abilita bottone "Nuovo Tab" per aggiungere altri progetti
+            self.btn_add_tab.config(state=tk.NORMAL)
         else:
             messagebox.showerror("Errore", f"Impossibile avviare Claude in:\n{path}")
             
