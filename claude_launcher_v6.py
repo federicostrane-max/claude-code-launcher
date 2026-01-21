@@ -164,6 +164,7 @@ def launch_ralph_loop(project_path, mode="plan", max_iterations=5, model="sonnet
 
     # Script batch per il loop Ralph
     batch_content = f'''@echo off
+chcp 65001 >nul
 setlocal enabledelayedexpansion
 {drive}
 cd "{project_path}"
@@ -423,6 +424,7 @@ def launch_claude_terminal(project_path, session_id=None, new_session=False, as_
 
     if sys.platform == 'win32':
         batch_content = f'''@echo off
+chcp 65001 >nul
 {drive}
 cd "{project_path}"
 cls
@@ -961,9 +963,26 @@ class ClaudeLauncherGUI:
         # ============ SEZIONE MESSAGGIO ============
         msg_frame = ttk.LabelFrame(frame, text="💬 Messaggio per Claude", padding="10")
         msg_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 5))
-        
-        self.msg_text = tk.Text(msg_frame, height=3, wrap=tk.WORD, font=("Segoe UI", 10))
-        self.msg_text.pack(fill=tk.BOTH, expand=True)
+
+        # Frame per Text + Scrollbar
+        msg_inner_frame = ttk.Frame(msg_frame)
+        msg_inner_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Scrollbar verticale per il campo messaggio
+        msg_scrollbar = ttk.Scrollbar(msg_inner_frame, orient=tk.VERTICAL)
+        msg_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Text widget con altezza minima 3 ma espandibile
+        self.msg_text = tk.Text(
+            msg_inner_frame,
+            height=3,  # Altezza minima
+            wrap=tk.WORD,
+            font=("Segoe UI", 10),
+            yscrollcommand=msg_scrollbar.set
+        )
+        self.msg_text.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+        msg_scrollbar.config(command=self.msg_text.yview)
+
         self.msg_text.insert("1.0", "Descrivi cosa vuoi che Claude faccia...")
         self.msg_text.bind("<FocusIn>", self.on_msg_focus_in)
         self.msg_text.bind("<FocusOut>", self.on_msg_focus_out)
