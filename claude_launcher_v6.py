@@ -1,12 +1,13 @@
 """
-Claude Code Launcher v6
+Claude Code Launcher v8
 - Multi-Project con selezione sessioni
-- NUOVO: Scelta tra NUOVA SESSIONE e RIPRENDI SESSIONE
+- Scelta tra NUOVA SESSIONE e RIPRENDI SESSIONE
 - Windows Terminal
 - GUI Screenshot Helper (Ctrl+V)
 - FILE UPLOAD Helper (Browse per selezionare file)
 - --dangerously-skip-permissions sempre attivo
-- NUOVO: USA RALPH - Modalità autonoma basata su Ralph Wiggum
+- USA RALPH - Modalità autonoma basata su Ralph Wiggum
+- NUOVO: Multi-Tab support - Apri più progetti nella stessa finestra Windows Terminal
 """
 
 import os
@@ -752,7 +753,7 @@ class RalphConfigDialog:
 class ClaudeLauncherGUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("🚀 Claude Code Launcher v6")
+        self.root.title("🚀 Claude Code Launcher v8")
         self.root.geometry("750x850")
         self.root.resizable(True, True)
         
